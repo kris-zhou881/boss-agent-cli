@@ -277,6 +277,32 @@ def test_try_connect_creates_new_context_when_none_exists():
 	assert any(c["name"] == "wt2" for c in cookies_arg)
 
 
+@pytest.mark.parametrize("stop_kind", ["workflow", "keyboard"])
+def test_try_connect_closes_only_its_new_tab_when_navigation_is_stopped(stop_kind):
+	"""导航被风控或工作流停止时，不能在用户 Chrome 留下新建的空白标签。"""
+	class NavigationStopped(RuntimeError):
+		request_control_stop = True
+	stop_error = NavigationStopped("stopped") if stop_kind == "workflow" else KeyboardInterrupt()
+
+	session = BrowserSession(cookies={}, user_agent="")
+	session._pw = MagicMock()
+	mock_browser = MagicMock()
+	mock_context = MagicMock()
+	mock_context.pages = []
+	mock_page = MagicMock()
+	mock_page.goto.side_effect = stop_error
+	mock_context.new_page.return_value = mock_page
+	mock_browser.contexts = [mock_context]
+	session._pw.chromium.connect_over_cdp.return_value = mock_browser
+
+	with pytest.raises(type(stop_error)):
+		session._try_connect("ws://localhost:9222/test")
+
+	mock_page.close.assert_called_once()
+	mock_context.close.assert_not_called()
+	mock_browser.close.assert_called_once()
+
+
 def test_start_headless_tolerates_networkidle_timeout():
 	"""Headless 预热不应因 networkidle 等待超时而直接失败。"""
 	logger = MagicMock()

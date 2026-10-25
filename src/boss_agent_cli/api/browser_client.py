@@ -400,6 +400,7 @@ class BrowserSession:
 		# 每次连接尝试都重置就绪标志：复用页签分支不碰 _page_ready，若上一次尝试
 		# 在新建页签 goto 超时留下 False，会污染本次复用的健康页签（review Finding）。
 		self._page_ready = True
+		created_page: Any | None = None
 		try:
 			self._browser = self._pw.chromium.connect_over_cdp(url)
 			contexts = self._browser.contexts
@@ -447,7 +448,8 @@ class BrowserSession:
 				self._close_browser_quietly()
 				return False
 			else:
-				self._page = self._context.new_page()
+				created_page = self._context.new_page()
+				self._page = created_page
 				self._own_page = True
 				# CDP 模式下用较长超时 + DOM 就绪等待（commit 级返回后立即
 				# evaluate 会撞上 execution context destroyed）
@@ -467,9 +469,14 @@ class BrowserSession:
 			reuse_label = "复用用户 context" if not self._own_context else "新建 context"
 			self._log(f"[boss] CDP 连接成功 ({url})，{reuse_label} + {page_label}")
 			return True
-		except Exception as error:
+		except BaseException as error:
+			if created_page is not None:
+				try:
+					created_page.close()
+				except Exception:
+					pass
 			self._close_browser_quietly()
-			if is_request_stop(error):
+			if not isinstance(error, Exception) or is_request_stop(error):
 				raise
 			return False
 
