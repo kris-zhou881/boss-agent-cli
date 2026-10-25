@@ -194,10 +194,10 @@ def doctor_cmd(ctx: click.Context, live_probe: bool, probe_cookies: bool) -> Non
 	else:
 		add_check("cdp_risk_lock", "ok", "未记录 BOSS 本地风控锁")
 
-	# 5) Network probe
-	if risk_lock["locked"]:
+	# 5) 仅显式在线探测才访问平台；默认 doctor 保持本地诊断。
+	if live_probe and risk_lock["locked"]:
 		add_check("network", "warn", "本地风险锁未解除，未发送平台网络探测")
-	else:
+	elif live_probe:
 		try:
 			resp = httpx.get(config.site_url, timeout=5, follow_redirects=True)
 			status = "ok" if resp.status_code < 400 else "warn"

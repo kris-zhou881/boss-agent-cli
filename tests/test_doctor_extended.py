@@ -59,6 +59,8 @@ def _invoke_doctor(tmp_path=None, platform="zhipin", **overrides):
 			if key in overrides:
 				cli_args.extend(["--" + key.replace("_", "-"), overrides[key]])
 		cli_args.append("doctor")
+		if overrides.get("live_probe"):
+			cli_args.append("--live-probe")
 		if overrides.get("probe_cookies"):
 			cli_args.append("--probe-cookies")
 		result = runner.invoke(cli, cli_args)
@@ -146,7 +148,7 @@ def test_patchright_missing(mock_which, tmp_path):
 
 def test_network_failure(tmp_path):
 	"""访问 zhipin.com 抛异常时 network 应为 warn。"""
-	code, parsed = _invoke_doctor(tmp_path, http_exc=ConnectionError("network down"))
+	code, parsed = _invoke_doctor(tmp_path, http_exc=ConnectionError("network down"), live_probe=True)
 	network_check = _find_check(parsed["data"]["checks"], "network")
 	assert network_check is not None
 	assert network_check["status"] == "warn"
@@ -155,16 +157,22 @@ def test_network_failure(tmp_path):
 
 def test_network_http_error_status(tmp_path):
 	"""zhipin.com 返回 HTTP 5xx 时 network 应为 warn。"""
-	code, parsed = _invoke_doctor(tmp_path, http_status=503)
+	code, parsed = _invoke_doctor(tmp_path, http_status=503, live_probe=True)
 	network_check = _find_check(parsed["data"]["checks"], "network")
 	assert network_check["status"] == "warn"
 
 
 def test_network_ok(tmp_path):
 	"""zhipin.com 返回 200 时 network 应为 ok。"""
-	code, parsed = _invoke_doctor(tmp_path, http_status=200)
+	code, parsed = _invoke_doctor(tmp_path, http_status=200, live_probe=True)
 	network_check = _find_check(parsed["data"]["checks"], "network")
 	assert network_check["status"] == "ok"
+
+
+def test_doctor_default_does_not_contact_platform(tmp_path):
+	code, parsed = _invoke_doctor(tmp_path)
+	assert code == 0
+	assert _find_check(parsed["data"]["checks"], "network") is None
 
 
 # ── 5. 登录态检查 ────────────────────────────────────────────────────
@@ -302,7 +310,7 @@ def test_doctor_does_not_contact_removed_bridge(tmp_path):
 		result = CliRunner().invoke(cli, ["--data-dir", str(tmp_path), "doctor"])
 
 	assert result.exit_code == 0
-	assert mock_httpx.call_count > 0
+	assert mock_httpx.call_count == 0
 	assert all("19826" not in str(call.args[0]) for call in mock_httpx.call_args_list)
 	mock_post.assert_not_called()
 

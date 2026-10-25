@@ -232,7 +232,8 @@ def test_doctor_command(mock_auth_cls, mock_probe_cdp, mock_httpx_get, mock_extr
 	assert parsed["command"] == "doctor"
 	assert parsed["data"]["check_count"] >= 8
 	assert "checks" in parsed["data"]
-	assert any(item["name"] == "network" for item in parsed["data"]["checks"])
+	assert not any(item["name"] == "network" for item in parsed["data"]["checks"])
+	mock_httpx_get.assert_not_called()
 	assert any(item["name"] == "cookie_extract" for item in parsed["data"]["checks"])
 	mock_extract_cookies.assert_not_called()
 	assert any(item["name"] == "auth_token_quality" for item in parsed["data"]["checks"])
