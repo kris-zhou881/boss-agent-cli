@@ -253,7 +253,8 @@ def _warm_home_for_runtime(page: Any, home_url: str, *, stage: str, is_cdp: bool
 	超时/失败、页面仍处于未完成导航状态——此时调用方必须避免对其执行
 	evaluate（patchright 会因执行上下文无法建立而永久挂起）。
 
-	普通导航超时可有界重试；已进入安全验证页立即抛风险，不清掉页面再请求。
+	无头浏览器导航超时可有界重试；CDP 用户页签失败时停止本次导航。
+	已进入安全验证页立即抛风险，不清掉页面再请求。
 	"""
 	from boss_agent_cli.api.client import PlatformRiskError
 
@@ -268,6 +269,11 @@ def _warm_home_for_runtime(page: Any, home_url: str, *, stage: str, is_cdp: bool
 			raise
 		except Exception as e:
 			_raise_if_security_page(page, is_cdp=is_cdp)
+			if is_cdp:
+				# 用户可见的 CDP 页签不能重置为 about:blank；导航已失败时也
+				# 不再连续重试，避免把原始状态覆盖掉或增加平台请求。
+				_browser_diag(f"[boss] {stage}：首页导航未完成（{e}），停止本次页面操作")
+				return False
 			_browser_diag(f"[boss] {stage}：首页导航未在预期时间完成（{e}），重试 {attempt + 1}/{_HOME_NAV_RETRIES}...")
 			try:
 				page.goto("about:blank", wait_until="domcontentloaded", timeout=_NAV_TIMEOUT_MS)

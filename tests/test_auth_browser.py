@@ -268,6 +268,16 @@ def test_warm_home_for_runtime_reports_false_when_goto_stalls():
 	assert _warm_home_for_runtime(mock_page, HOME_URL, stage="test") is False
 
 
+def test_cdp_home_navigation_failure_does_not_open_about_blank():
+	"""CDP 标签页导航失败时保留原页面，不再主动跳到 about:blank。"""
+	mock_page = MagicMock()
+	mock_page.goto.side_effect = TimeoutError("Timeout 15000ms exceeded")
+
+	assert _warm_home_for_runtime(mock_page, HOME_URL, stage="test", is_cdp=True) is False
+	mock_page.goto.assert_called_once_with(HOME_URL, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT_MS)
+	mock_page.wait_for_load_state.assert_not_called()
+
+
 def test_warm_home_for_runtime_reports_true_when_goto_succeeds():
 	mock_page = MagicMock()
 	mock_page.goto.return_value = None
