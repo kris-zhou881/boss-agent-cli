@@ -209,7 +209,7 @@ GOAL_HINTS: dict[str, str] = {
 	"job_detail": "查看单个职位完整信息",
 	"shortlist": "浏览本地收藏的职位",
 	"export": "导出搜索结果到文件",
-	"apply": "发起投递或立即沟通",
+	"apply": "发起立即沟通（不发送附件简历）",
 	"greet": "向招聘者发送招呼",
 	"exchange": "请求手机号或微信",
 	"mark": "更新沟通联系人标签",
@@ -953,7 +953,7 @@ def _candidate_job_follow_up(menu: MenuDriver, item: Mapping[str, Any], platform
 		if security_id not in (None, "") and job_id not in (None, ""):
 			actions.extend(
 				[
-					MenuOption("apply", "投递或立即沟通"),
+					MenuOption("apply", "发起立即沟通"),
 					MenuOption("greet", "向招聘者打招呼"),
 				]
 			)
@@ -1393,7 +1393,7 @@ def collect_entity_follow_up(
 		actions.extend(
 			[
 				MenuOption("greet", "向招聘者打招呼", "发送招呼语"),
-				MenuOption("apply", "投递或立即沟通", "发起沟通/投递"),
+				MenuOption("apply", "发起立即沟通", "不发送附件简历"),
 			]
 		)
 	if inputs.get("security_id"):

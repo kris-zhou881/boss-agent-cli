@@ -1,6 +1,6 @@
 """commands/greet.py 覆盖率补齐测试。
 
-覆盖 greet 成功路径、hook veto、batch-greet 完整执行链、rate-limit 停止、greet-limit 停止、失败重试。
+覆盖 greet 成功路径、hook veto、batch-greet 完整执行链、rate-limit 停止、greet-limit 停止、结果不明时停批。
 """
 
 import json
@@ -165,16 +165,15 @@ def test_batch_greet_greet_limit_stops_remaining(mock_cache_cls, mock_auth_cls, 
 @patch("boss_agent_cli.commands.greet.get_platform_instance")
 @patch("boss_agent_cli.commands.greet.AuthManager")
 @patch("boss_agent_cli.commands.greet.CacheStore")
-def test_batch_greet_network_error_retries_once_then_skips(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
-	"""普通网络错误：第一次重试仍失败 → 跳过该职位，继续下一个。"""
+def test_batch_greet_unknown_write_result_stops_without_retry(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
+	"""发送超时后结果不明：不重试当前职位，也不发送下一个。"""
 	mock_cache = _ctx_mock(mock_cache_cls)
 	mock_cache.is_greeted.return_value = False
 	mock_client = _ctx_mock(mock_client_cls)
 	mock_client.search_jobs.return_value = {
 		"zpData": {"jobList": [_make_raw_job("A", "s1"), _make_raw_job("B", "s2")]}
 	}
-	# s1: 两次都失败（非 RATE_LIMITED / GREET_LIMIT）
-	# s2: 成功
+	# s1 的异常可能发生在平台已收消息后；s2 不应触发。
 	call_counts = {"s1": 0}
 
 	def greet_side_effect(sid, jid, msg=""):
@@ -189,22 +188,59 @@ def test_batch_greet_network_error_retries_once_then_skips(mock_cache_cls, mock_
 
 	runner = CliRunner()
 	result = runner.invoke(cli, ["batch-greet", "test", "--count", "2"])
-	assert result.exit_code == 0
+	assert result.exit_code == 1
 	parsed = json.loads(result.output)
-	assert parsed["data"]["total_greeted"] == 1
-	assert parsed["data"]["total_failed"] == 1
-	# s1 应该被重试过 1 次（共调用 2 次）
-	assert call_counts["s1"] == 2
-	# s2 成功
-	assert any(r["security_id"] == "s2" for r in parsed["data"]["greeted"])
+	assert parsed["error"]["code"] == "ACTION_UNCONFIRMED"
+	assert parsed["error"]["recoverable"] is False
+	assert parsed["error"]["details"]["unconfirmed"][0]["security_id"] == "s1"
+	assert call_counts["s1"] == 1
+	assert mock_client.greet.call_count == 1
+	mock_cache.record_greet.assert_not_called()
 
 
 @patch("boss_agent_cli.commands.greet.time")
 @patch("boss_agent_cli.commands.greet.get_platform_instance")
 @patch("boss_agent_cli.commands.greet.AuthManager")
 @patch("boss_agent_cli.commands.greet.CacheStore")
-def test_batch_greet_network_error_first_retry_succeeds(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
-	"""第一次失败但重试成功，应算 success 不是 failed。"""
+def test_batch_greet_preserves_prior_success_when_later_result_is_unknown(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
+	"""中途超时保留已成功记录，后续职位不发送。"""
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_greeted.return_value = False
+	mock_client = _ctx_mock(mock_client_cls)
+	mock_client.search_jobs.return_value = {
+		"zpData": {"jobList": [
+			_make_raw_job("A", "s0"),
+			_make_raw_job("B", "s1"),
+			_make_raw_job("C", "s2"),
+		]}
+	}
+
+	def greet_side_effect(sid, jid, msg=""):
+		if sid == "s1":
+			raise TimeoutError("response lost")
+		return {"code": 0, "zpData": {}}
+
+	mock_client.greet.side_effect = greet_side_effect
+	mock_client.is_success.return_value = True
+	mock_time.sleep = MagicMock()
+
+	result = CliRunner().invoke(cli, ["batch-greet", "test", "--count", "3"])
+	assert result.exit_code == 1
+	parsed = json.loads(result.output)
+	assert parsed["error"]["code"] == "ACTION_UNCONFIRMED"
+	assert parsed["error"]["details"]["total_greeted"] == 1
+	assert parsed["error"]["details"]["greeted"][0]["security_id"] == "s0"
+	assert parsed["error"]["details"]["unconfirmed"][0]["security_id"] == "s1"
+	assert mock_client.greet.call_count == 2
+	mock_cache.record_greet.assert_called_once_with("s0", "job_s0")
+
+
+@patch("boss_agent_cli.commands.greet.time")
+@patch("boss_agent_cli.commands.greet.get_platform_instance")
+@patch("boss_agent_cli.commands.greet.AuthManager")
+@patch("boss_agent_cli.commands.greet.CacheStore")
+def test_batch_greet_transient_error_still_stops_without_retry(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
+	"""即使下一次可能成功，也不能在写操作结果不明时自动重发。"""
 	mock_cache = _ctx_mock(mock_cache_cls)
 	mock_cache.is_greeted.return_value = False
 	mock_client = _ctx_mock(mock_client_cls)
@@ -218,7 +254,7 @@ def test_batch_greet_network_error_first_retry_succeeds(mock_cache_cls, mock_aut
 		call_count["n"] += 1
 		if call_count["n"] == 1:
 			raise ConnectionError("transient")
-		return {"code": 0, "zpData": {}}  # 第二次成功
+		return {"code": 0, "zpData": {}}
 
 	mock_client.greet.side_effect = greet_side_effect
 	mock_client.is_success.return_value = True
@@ -226,10 +262,11 @@ def test_batch_greet_network_error_first_retry_succeeds(mock_cache_cls, mock_aut
 
 	runner = CliRunner()
 	result = runner.invoke(cli, ["batch-greet", "test", "--count", "1"])
-	assert result.exit_code == 0
+	assert result.exit_code == 1
 	parsed = json.loads(result.output)
-	assert parsed["data"]["total_greeted"] == 1
-	assert parsed["data"]["total_failed"] == 0
+	assert parsed["error"]["code"] == "ACTION_UNCONFIRMED"
+	assert call_count["n"] == 1
+	mock_cache.record_greet.assert_not_called()
 
 
 @patch("boss_agent_cli.commands.greet.time")

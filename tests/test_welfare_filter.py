@@ -56,7 +56,7 @@ def test_welfare_filter_tag_match(mock_auth, mock_client_cls, mock_cache_cls, mo
 	}
 
 	runner = CliRunner()
-	result = runner.invoke(cli, ["--json", "search", "golang", "--welfare", "双休"])
+	result = runner.invoke(cli, ["--json", "--browser-source", "auto", "search", "golang", "--welfare", "双休"])
 	assert result.exit_code == 0
 	parsed = json.loads(result.output)
 	assert parsed["ok"] is True
@@ -93,7 +93,7 @@ def test_welfare_filter_detail_fallback(mock_auth, mock_client_cls, mock_cache_c
 	}
 
 	runner = CliRunner()
-	result = runner.invoke(cli, ["--json", "search", "golang", "--welfare", "双休"])
+	result = runner.invoke(cli, ["--json", "--browser-source", "auto", "search", "golang", "--welfare", "双休"])
 	assert result.exit_code == 0
 	parsed = json.loads(result.output)
 	assert parsed["ok"] is True
@@ -131,7 +131,7 @@ def test_welfare_filter_data_envelope_detail_fallback(mock_auth, mock_client_cls
 	}
 
 	runner = CliRunner()
-	result = runner.invoke(cli, ["--json", "search", "golang", "--welfare", "双休"])
+	result = runner.invoke(cli, ["--json", "--browser-source", "auto", "search", "golang", "--welfare", "双休"])
 	assert result.exit_code == 0
 	parsed = json.loads(result.output)
 	assert parsed["ok"] is True

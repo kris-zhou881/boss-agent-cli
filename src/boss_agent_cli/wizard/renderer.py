@@ -21,7 +21,7 @@ STEP_LABELS = {
 	"candidate_search": "搜索并筛选职位",
 	"candidate_recommend": "获取职位推荐",
 	"candidate_detail": "读取职位详情",
-	"candidate_apply": "投递或立即沟通",
+	"candidate_apply": "发起立即沟通",
 	"candidate_greet": "向招聘者打招呼",
 	"candidate_exchange": "交换联系方式",
 	"candidate_mark": "更新联系人标签",

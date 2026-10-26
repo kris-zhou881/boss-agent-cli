@@ -329,7 +329,7 @@ def search_cmd(
 			hints: dict[str, Any] = {
 				"next_actions": [
 					f"使用 {boss_command_for_ctx(ctx, 'detail <security_id>')} 查看职位详情",
-					f"使用 {boss_command_for_ctx(ctx, 'apply <security_id> <job_id>')} 投递，"
+					f"使用 {boss_command_for_ctx(ctx, 'apply <security_id> <job_id>')} 发起立即沟通，"
 					f"或 {boss_command_for_ctx(ctx, 'greet <security_id> <job_id>')} 沟通",
 				],
 			}

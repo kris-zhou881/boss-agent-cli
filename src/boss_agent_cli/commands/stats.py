@@ -1,6 +1,6 @@
-"""boss stats — 投递转化漏斗统计。
+"""boss stats — 沟通转化漏斗统计。
 
-只读聚合本地缓存数据，给出打招呼 → 投递 → 候选池 → 监控新增的全景视图。
+只读聚合本地缓存数据，给出打招呼 → 立即沟通请求 → 候选池 → 监控新增的全景视图。
 支持 JSON 信封（默认）和自包含 HTML 交互式报表两种输出格式。
 """
 
@@ -97,10 +97,10 @@ def _build_hints(data: dict[str, Any]) -> list[str]:
 	if greeted_total == 0:
 		hints.append("boss search <query> 搜索职位")
 	elif applied_total == 0 and greeted_total > 0:
-		hints.append("使用 boss apply <security_id> <job_id> 继续投递")
+		hints.append("使用 boss apply <security_id> <job_id> 发起立即沟通；附件简历须另行发送")
 	apply_rate = data.get("conversion", {}).get("apply_rate", 0)
 	if apply_rate < 0.1 and greeted_total >= 20:
-		hints.append("打招呼转投递率偏低，考虑调整目标岗位或优化简历（boss ai optimize）")
+		hints.append("打招呼转立即沟通率偏低，考虑调整目标岗位或优化简历（boss ai optimize）")
 	hints.append("boss pipeline 查看候选进度")
 	hints.append("boss follow-up 查看需要跟进的联系人")
 	return hints
@@ -137,7 +137,7 @@ def _render_html(data: dict[str, Any]) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>boss-agent-cli 投递漏斗报表</title>
+<title>boss-agent-cli 沟通漏斗报表</title>
 <style>
 :root {{
 	--bg: #0f172a;
@@ -225,7 +225,7 @@ footer a {{ color: var(--accent); text-decoration: none; }}
 <body>
 
 <header>
-	<h1>📊 投递转化漏斗</h1>
+	<h1>📊 沟通转化漏斗</h1>
 	<div class="meta">窗口期：最近 {window_days} 天 · 生成时间：{generated_at}</div>
 </header>
 
@@ -240,7 +240,7 @@ footer a {{ color: var(--accent); text-decoration: none; }}
 			<div class="sub">累计 · 窗口 {window.get("greeted", 0)}</div>
 		</div>
 		<div class="card success">
-			<div class="label">投递总数</div>
+			<div class="label">立即沟通请求总数</div>
 			<div class="value">{applied}</div>
 			<div class="sub">累计 · 窗口 {window.get("applied", 0)}</div>
 		</div>
@@ -250,7 +250,7 @@ footer a {{ color: var(--accent); text-decoration: none; }}
 			<div class="sub">累计 · 窗口 {window.get("shortlist", 0)}</div>
 		</div>
 		<div class="card">
-			<div class="label">投递转化率</div>
+			<div class="label">立即沟通转化率</div>
 			<div class="value">{apply_rate_pct}%</div>
 			<div class="sub">窗口 {apply_rate_window_pct}%</div>
 		</div>
@@ -265,7 +265,7 @@ footer a {{ color: var(--accent); text-decoration: none; }}
 			<div class="funnel-bar" style="width: {_bar_width(greeted)}px;">{greeted}</div>
 		</div>
 		<div class="funnel-row">
-			<span class="funnel-label">投递</span>
+			<span class="funnel-label">立即沟通</span>
 			<div class="funnel-bar applied" style="width: {_bar_width(applied)}px;">{applied} ({apply_rate_pct}%)</div>
 		</div>
 		<div class="funnel-row">
@@ -309,13 +309,13 @@ def _render_stats(data: dict[str, Any]) -> None:
 	table.add_column("总计", justify="right", style="green")
 	table.add_column(f"近 {days} 天", justify="right", style="yellow")
 
-	for label, key in (("打招呼", "greeted"), ("投递", "applied"), ("候选池", "shortlist"), ("监控命中", "watch_hits")):
+	for label, key in (("打招呼", "greeted"), ("立即沟通", "applied"), ("候选池", "shortlist"), ("监控命中", "watch_hits")):
 		total = funnel.get(key)
 		recent = window.get(key)
 		table.add_row(label, "-" if total is None else str(total), "-" if recent is None else str(recent))
 	display.console.print(table)
 
-	display.console.print(f"  [dim]打招呼 → 投递[/dim]    {_percent(conversion.get('apply_rate'))}")
+	display.console.print(f"  [dim]打招呼 → 立即沟通[/dim]    {_percent(conversion.get('apply_rate'))}")
 	display.console.print(f"  [dim]打招呼 → 候选池[/dim]  {_percent(conversion.get('shortlist_rate'))}")
 
 	if note := data.get("note"):
@@ -351,7 +351,7 @@ def _percent(value: Any) -> str:
 )
 @click.pass_context
 def stats_cmd(ctx: click.Context, days: int, output_format: str, output_path: Path | None) -> None:
-	"""投递转化漏斗统计（只读聚合）"""
+	"""沟通转化漏斗统计（只读聚合）"""
 	data_dir: Path = ctx.obj["data_dir"]
 	db_path = data_dir / "cache" / "boss_agent.db"
 

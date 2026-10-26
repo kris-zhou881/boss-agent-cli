@@ -282,7 +282,7 @@ def _tool_definitions(data: dict[str, Any]) -> list[ToolDefinition]:
 		),
 		ToolDefinition(
 			name="boss_apply",
-			description="发起投递或立即沟通动作（幂等，不会重复投递）",
+			description="发起立即沟通请求；不发送附件简历（同一职位不重复提交）",
 			input_schema={
 				"type": "object",
 				"properties": {

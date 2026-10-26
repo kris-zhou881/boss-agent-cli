@@ -194,59 +194,50 @@ def batch_greet_cmd(ctx: click.Context, query: str, city: str | None, salary: st
 			risk_error: PlatformRiskError | None = None
 
 			for idx, item in enumerate(candidates):
-				retry_count = 0
 				success = False
 
-				while retry_count <= 1:
-					try:
-						resp = platform.greet(item.security_id, item.job_id)
-						if not platform.is_success(resp):
-							error_code, error_message = platform.parse_error(resp)
-							risk_cls = RISK_ERROR_BY_CODE.get(error_code)
-							if risk_cls is not None:
-								# 响应字典形态的风控与异常形态走同一条终止分支，
-								# 不再靠 message 里的「频率」字样误判成 RATE_LIMITED（Issue #419）。
-								raise risk_cls(error_message or error_code)
-							raise RuntimeError(error_code if error_code != "UNKNOWN" else (resp.get("message") or "greet failed"))
-						cache.record_greet(item.security_id, item.job_id)
+				try:
+					resp = platform.greet(item.security_id, item.job_id)
+					if not platform.is_success(resp):
+						error_code, error_message = platform.parse_error(resp)
+						risk_cls = RISK_ERROR_BY_CODE.get(error_code)
+						if risk_cls is not None:
+							# 响应字典形态的风控与异常形态走同一条终止分支。
+							raise risk_cls(error_message or error_code)
+						raise RuntimeError(error_code if error_code != "UNKNOWN" else (resp.get("message") or "greet failed"))
+					cache.record_greet(item.security_id, item.job_id)
+					results.append({
+						"security_id": item.security_id,
+						"job_id": item.job_id,
+						"title": item.title,
+						"company": item.company,
+						"status": "success",
+					})
+					success = True
+					logger.info(f"打招呼成功: {item.title} @ {item.company}")
+				except PlatformRiskError as exc:
+					# 风控：立即停批，不重试、不继续下一个候选人。
+					risk_error = exc
+					stopped_reason = exc.code
+					logger.warning(f"平台风控，停止批量打招呼: {item.title} @ {item.company}")
+				except Exception as exc:
+					error_msg = str(exc)
+					if "RATE_LIMITED" in error_msg or "频率" in error_msg:
+						stopped_reason = "RATE_LIMITED"
+					elif "GREET_LIMIT" in error_msg or "上限" in error_msg:
+						stopped_reason = "GREET_LIMIT"
+					else:
+						# 发送请求可能已生效；不重试，也不继续后续候选人。
+						stopped_reason = "ACTION_UNCONFIRMED"
 						results.append({
 							"security_id": item.security_id,
 							"job_id": item.job_id,
 							"title": item.title,
 							"company": item.company,
-							"status": "success",
+							"status": "unconfirmed",
+							"error_type": type(exc).__name__,
 						})
-						success = True
-						logger.info(f"打招呼成功: {item.title} @ {item.company}")
-						break
-					except PlatformRiskError as exc:
-						# 风控：立即停批，不重试、不 sleep、不继续下一个候选人。
-						risk_error = exc
-						stopped_reason = exc.code
-						logger.warning(f"平台风控，停止批量打招呼: {item.title} @ {item.company}")
-						break
-					except Exception as e:
-						error_msg = str(e)
-						if "RATE_LIMITED" in error_msg or "频率" in error_msg:
-							stopped_reason = "RATE_LIMITED"
-							break
-						if "GREET_LIMIT" in error_msg or "上限" in error_msg:
-							stopped_reason = "GREET_LIMIT"
-							break
-						if retry_count == 0:
-							logger.warning(f"打招呼失败，重试中: {item.title}")
-							retry_count += 1
-							time.sleep(random.uniform(1.0, 2.0))
-						else:
-							results.append({
-								"security_id": item.security_id,
-								"job_id": item.job_id,
-								"title": item.title,
-								"company": item.company,
-								"status": "failed",
-								"error": error_msg,
-							})
-							break
+						logger.warning(f"打招呼结果未确认，已停止批次: {item.title} @ {item.company}")
 
 				if stopped_reason:
 					break
@@ -258,6 +249,7 @@ def batch_greet_cmd(ctx: click.Context, query: str, city: str | None, salary: st
 			data = {
 				"greeted": [r for r in results if r["status"] == "success"],
 				"failed": [r for r in results if r["status"] == "failed"],
+				"unconfirmed": [r for r in results if r["status"] == "unconfirmed"],
 				"total_greeted": sum(1 for r in results if r["status"] == "success"),
 				"total_failed": sum(1 for r in results if r["status"] == "failed"),
 			}
@@ -277,6 +269,17 @@ def batch_greet_cmd(ctx: click.Context, query: str, city: str | None, salary: st
 					recovery_action=recovery_action,
 					details=data,
 					hints=hints or None,
+				)
+				return
+
+			if stopped_reason == "ACTION_UNCONFIRMED":
+				handle_error_output(
+					ctx, "batch-greet",
+					code="ACTION_UNCONFIRMED",
+					message="打招呼结果未确认，已停止后续发送",
+					recoverable=False,
+					recovery_action="在 BOSS 消息页核对目标会话，勿直接重发",
+					details=data,
 				)
 				return
 

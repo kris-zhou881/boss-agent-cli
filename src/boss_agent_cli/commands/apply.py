@@ -14,7 +14,7 @@ from boss_agent_cli.display import boss_command_for_ctx, handle_auth_errors, han
 @click.pass_context
 @handle_auth_errors("apply")
 def apply_cmd(ctx: click.Context, security_id: str, job_id: str, lid: str) -> None:
-	"""发起最小可用投递/立即沟通动作（当前复用立即沟通链路）。"""
+	"""发起立即沟通；本命令不会上传或发送附件简历。"""
 	if not require_compliance_allowed(ctx, "apply"):
 		return
 
@@ -27,7 +27,7 @@ def apply_cmd(ctx: click.Context, security_id: str, job_id: str, lid: str) -> No
 				ctx,
 				"apply",
 				code="ALREADY_APPLIED",
-				message="已对该职位发起过投递/立即沟通",
+				message="已对该职位发起过立即沟通；附件简历状态需另行核对",
 				hints={
 					"next_actions": [
 						boss_command_for_ctx(ctx, "me --section deliver"),
@@ -46,7 +46,7 @@ def apply_cmd(ctx: click.Context, security_id: str, job_id: str, lid: str) -> No
 					"apply",
 					platform,
 					resp,
-					fallback_message="投递/立即沟通提交失败",
+					fallback_message="立即沟通提交失败",
 					unknown_error_code="NETWORK_ERROR",
 				)
 				return
@@ -60,7 +60,10 @@ def apply_cmd(ctx: click.Context, security_id: str, job_id: str, lid: str) -> No
 			"job_id": job_id,
 			"lid": lid,
 			"mode": "immediate_chat_apply",
-			"message": "投递/立即沟通已提交",
+			"chat_request_submitted": True,
+			"message_delivery_confirmed": False,
+			"attachment_resume_sent": False,
+			"message": "立即沟通请求已提交；消息送达与附件简历发送需分别核对",
 		},
 		render=lambda d: render_message_panel(d, title="apply"),
 		hints={

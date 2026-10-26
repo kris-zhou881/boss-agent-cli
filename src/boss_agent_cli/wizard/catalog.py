@@ -30,7 +30,7 @@ GOALS = {
 			"job_detail", "candidate", "查看职位详情", ("auth_status", "candidate_detail"), ("security_id",)
 		),
 		"apply": GoalDefinition(
-			"apply", "candidate", "投递或立即沟通", ("auth_status", "candidate_apply"), ("security_id", "job_id")
+			"apply", "candidate", "发起立即沟通", ("auth_status", "candidate_apply"), ("security_id", "job_id")
 		),
 		"greet": GoalDefinition(
 			"greet", "candidate", "向招聘者打招呼", ("auth_status", "candidate_greet"), ("security_id", "job_id")

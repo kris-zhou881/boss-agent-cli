@@ -684,7 +684,7 @@ SCHEMA_DATA = {
 			},
 		},
 		"apply": {
-			"description": "发起投递或立即沟通动作。",
+			"description": "发起立即沟通请求；不发送附件简历。",
 			"args": [
 				{"name": "security_id", "required": True, "description": "安全 ID"},
 				{"name": "job_id", "required": True, "description": "加密职位 ID"},

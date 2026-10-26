@@ -430,11 +430,18 @@ def _candidate_apply(context: ActionContext, inputs: Mapping[str, Any], prior: M
 	job_id = str(_required(inputs, "job_id"))
 	with CacheStore(context.data_dir / "cache" / "boss_agent.db") as cache:
 		if cache.is_applied(security_id, job_id):
-			raise WorkflowActionError("ALREADY_APPLIED", "已对该职位发起过投递/立即沟通")
+			raise WorkflowActionError("ALREADY_APPLIED", "已对该职位发起过立即沟通；附件简历状态需另行核对")
 		with context.candidate_platform() as platform:
-			data = _unwrap(platform, platform.apply(security_id, job_id, lid=str(inputs.get("lid") or "")), "投递失败")
+			data = _unwrap(platform, platform.apply(security_id, job_id, lid=str(inputs.get("lid") or "")), "立即沟通失败")
 		cache.record_apply(security_id, job_id)
-	return StepResult({"security_id": security_id, "job_id": job_id, "result": data})
+	return StepResult({
+		"security_id": security_id,
+		"job_id": job_id,
+		"result": data,
+		"chat_request_submitted": True,
+		"message_delivery_confirmed": False,
+		"attachment_resume_sent": False,
+	})
 
 
 def _candidate_greet(context: ActionContext, inputs: Mapping[str, Any], prior: Mapping[str, Any]) -> StepResult:

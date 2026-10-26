@@ -721,7 +721,7 @@ def test_search_json_hints_expose_available_candidate_actions(mock_client_cls, m
 	assert parsed["ok"] is True
 	actions = parsed["hints"]["next_actions"]
 	assert "使用 boss detail <security_id> 查看职位详情" in actions
-	assert "使用 boss apply <security_id> <job_id> 投递，或 boss greet <security_id> <job_id> 沟通" in actions
+	assert "使用 boss apply <security_id> <job_id> 发起立即沟通，或 boss greet <security_id> <job_id> 沟通" in actions
 	mock_save_index.assert_called_once()
 
 
@@ -1653,7 +1653,7 @@ def test_search_reports_welfare_not_supported(mock_client_cls, mock_auth_cls, mo
 	mock_client.job_card.side_effect = NotImplementedError("unsupported")
 
 	runner = CliRunner()
-	result = runner.invoke(cli, ["search", "golang", "--welfare", "双休"])
+	result = runner.invoke(cli, ["--browser-source", "auto", "search", "golang", "--welfare", "双休"])
 	assert result.exit_code == 1
 	parsed = json.loads(result.output)
 	assert parsed["ok"] is False
@@ -1743,4 +1743,4 @@ def test_stats_json_hints_expose_available_application_action(mock_collect_stats
 	parsed = json.loads(result.output)
 	assert parsed["ok"] is True
 	actions = parsed["hints"]["next_actions"]
-	assert "使用 boss apply <security_id> <job_id> 继续投递" in actions
+	assert "使用 boss apply <security_id> <job_id> 发起立即沟通；附件简历须另行发送" in actions

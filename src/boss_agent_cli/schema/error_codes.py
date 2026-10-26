@@ -115,7 +115,7 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
 		"recovery_action": None,
 	},
 	"ALREADY_APPLIED": {
-		"message": "已发起过投递/立即沟通",
+		"message": "已发起过立即沟通；附件简历状态需另行核对",
 		"recoverable": False,
 		"recovery_action": None,
 	},

@@ -159,7 +159,7 @@ def test_stats_html_format_to_stdout(tmp_path):
 	])
 	assert result.exit_code == 0
 	assert "<!doctype html>" in result.output
-	assert "<title>boss-agent-cli 投递漏斗报表</title>" in result.output
+	assert "<title>boss-agent-cli 沟通漏斗报表</title>" in result.output
 	# 数据点应嵌入到 HTML
 	assert ">3<" in result.output  # greeted 显示
 	assert "33.33%" in result.output or "0.3333%" in result.output or "33.33" in result.output  # apply_rate

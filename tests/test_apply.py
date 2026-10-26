@@ -30,6 +30,9 @@ def test_apply_success(mock_cache_cls, mock_auth_cls, mock_get_platform):
 	assert parsed["data"]["security_id"] == "sec_001"
 	assert parsed["data"]["job_id"] == "job_001"
 	assert parsed["data"]["mode"] == "immediate_chat_apply"
+	assert parsed["data"]["chat_request_submitted"] is True
+	assert parsed["data"]["message_delivery_confirmed"] is False
+	assert parsed["data"]["attachment_resume_sent"] is False
 	mock_cache.record_apply.assert_called_once_with("sec_001", "job_001")
 
 
