@@ -237,6 +237,9 @@ class BrowserSession:
 			if budget is None:
 				self._throttle.wait()
 			check_request_control(self._check_request)
+			# 节流等待期间用户页签也可能变空白；此时尚未发起 fetch。
+			if self._bound_page_lost():
+				return self._page_lost_response()
 			try:
 				result = self._evaluate_fetch(payload)
 			finally:
@@ -588,6 +591,8 @@ class BrowserSession:
 	) -> dict[str, Any]:
 		self._ensure_started()
 		self._raise_if_security_page()
+		if self._bound_page_lost():
+			return self._page_lost_response()
 		endpoint = endpoint_for_request(method, url)
 		replay_safe = bool(endpoint is not None and endpoint.replay_safe)
 
@@ -653,6 +658,26 @@ class BrowserSession:
 			page_risk = platform_risk_page_response(url=url)
 			if page_risk is not None:
 				raise_platform_risk_response(page_risk, is_cdp=self._is_cdp)
+
+	def _bound_page_lost(self) -> bool:
+		"""用户已手动打开的页签失去 BOSS 来源时停止，不在空白页继续请求。"""
+		if self._policy.name != "existing-browser":
+			return False
+		try:
+			url = self._page.url
+		except Exception:
+			return True
+		return not isinstance(url, str) or not is_zhipin_url(url)
+
+	@staticmethod
+	def _page_lost_response() -> dict[str, Any]:
+		return {
+			"code": -1,
+			"message": "已绑定的 BOSS 标签页变为空白或离开 BOSS；本次请求未发送",
+			"zpData": {},
+			"__cli_error_code__": "BROWSER_PAGE_LOST",
+			"__cli_error_details__": {"request_sent": False},
+		}
 
 	def _evaluate_fetch(self, payload: dict[str, Any]) -> dict[str, Any]:
 		"""Bound Chromium evaluation as well as the fetch/body promise.

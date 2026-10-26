@@ -56,7 +56,7 @@ class BossPlatform(Platform):
 		if (
 			response.get("code") == -1
 			and isinstance(cli_code, str)
-			and cli_code in {"ACTION_UNCONFIRMED", "NETWORK_ERROR"}
+			and cli_code in {"ACTION_UNCONFIRMED", "BROWSER_PAGE_LOST", "NETWORK_ERROR"}
 		):
 			return str(cli_code), response_message(response)
 		return self._classify_platform_error(response, _ERROR_CODE_MAP)

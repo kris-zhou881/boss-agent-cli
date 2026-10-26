@@ -84,6 +84,11 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
 		"recoverable": True,
 		"recovery_action": "boss doctor",
 	},
+	"BROWSER_PAGE_LOST": {
+		"message": "已绑定的 BOSS 标签页变为空白或离开 BOSS；本次请求未发送",
+		"recoverable": True,
+		"recovery_action": "在原浏览器中手动打开并登录 BOSS 页面后继续；不要自动新建标签页",
+	},
 	"BROWSER_KERNEL_MISSING": {
 		"message": "patchright 浏览器内核缺失或与所需修订版不匹配",
 		"recoverable": True,

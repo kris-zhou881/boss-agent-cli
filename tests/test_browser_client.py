@@ -546,6 +546,35 @@ def test_existing_browser_does_not_create_page_when_all_contexts_lack_zhipin():
 	browser.new_context.assert_not_called()
 
 
+def test_existing_browser_stops_before_request_when_bound_tab_turns_blank():
+	session = BrowserSession(cookies={}, user_agent="", browser_source="existing-browser")
+	session._started = True
+	session._is_cdp = True
+	session._page = _FakePage("about:blank")
+	session._send_fetch = MagicMock()
+
+	result = session.request("POST", "https://www.zhipin.com/wapi/zpgeek/friend/add.json", data={})
+
+	assert result["__cli_error_code__"] == "BROWSER_PAGE_LOST"
+	assert result["__cli_error_details__"]["request_sent"] is False
+	session._send_fetch.assert_not_called()
+
+
+def test_existing_browser_stops_if_tab_turns_blank_during_throttle():
+	session = BrowserSession(cookies={}, user_agent="", browser_source="existing-browser")
+	session._started = True
+	session._is_cdp = True
+	session._page = _FakePage("https://www.zhipin.com/web/geek/job")
+	session._throttle.wait = MagicMock(side_effect=lambda: setattr(session._page, "url", "about:blank"))
+	session._evaluate_fetch = MagicMock()
+
+	result = session.request("GET", "https://www.zhipin.com/wapi/zpgeek/search/joblist.json")
+
+	assert result["__cli_error_code__"] == "BROWSER_PAGE_LOST"
+	assert result["__cli_error_details__"]["request_sent"] is False
+	session._evaluate_fetch.assert_not_called()
+
+
 def test_try_connect_creates_page_when_no_open_zhipin_tab():
 	"""CDP 复用 context 但无 zhipin 页签时：仍新建 page 并导航（回退现状）。"""
 	session = BrowserSession(cookies={}, user_agent="")

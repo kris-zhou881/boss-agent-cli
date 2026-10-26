@@ -92,6 +92,15 @@ class TestBossEnvelopeAdapter:
 		code, _ = self.plat.parse_error({"code": 36, "message": "risk"})
 		assert code == "ACCOUNT_RISK"
 
+	def test_parse_error_preserves_browser_page_lost(self) -> None:
+		code, message = self.plat.parse_error({
+			"code": -1,
+			"message": "已绑定的 BOSS 标签页变为空白或离开 BOSS；本次请求未发送",
+			"__cli_error_code__": "BROWSER_PAGE_LOST",
+		})
+		assert code == "BROWSER_PAGE_LOST"
+		assert "请求未发送" in message
+
 	def test_parse_error_unknown(self) -> None:
 		code, _ = self.plat.parse_error({"code": 999, "message": "unknown"})
 		assert code == "UNKNOWN"
