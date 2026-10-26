@@ -393,9 +393,8 @@ class BrowserSession:
 	def _try_connect(self, url: str, *, explicit: bool = True) -> bool:
 		"""Attempt a single CDP connection, reusing user's existing context.
 
-		Reuses the first existing browser context to preserve the user's
-		login state and avoid creating extra browser state. Only creates a
-		new context when none exists.
+		Finds an already open BOSS tab across existing contexts to preserve
+		its login state. Only creates a new context when none exists.
 		"""
 		# 每次连接尝试都重置就绪标志：复用页签分支不碰 _page_ready，若上一次尝试
 		# 在新建页签 goto 超时留下 False，会污染本次复用的健康页签（review Finding）。
@@ -406,13 +405,18 @@ class BrowserSession:
 			contexts = self._browser.contexts
 
 			if contexts:
-				# 复用用户现有 context（保留登录态，避免额外浏览器状态）
+				# 用户手动打开的 BOSS 页可能在第二个及后续 context；先找页再绑定
+				# 对应会话。找不到时沿用首个 context 的原有回退行为。
+				reused = None
 				self._context = contexts[0]
+				for context in contexts:
+					page = _find_reusable_zhipin_page(context)
+					if page is not None:
+						self._context = context
+						reused = page
+						break
 				self._own_context = False  # 非我们创建，close 时不关闭
-				# 优先复用用户已打开的 zhipin 页签：避免每次高风险 op 都新开空白页 +
-				# 导航到 BOSS 首页（issue #334：用户观感是"反复自动新开/刷新页面"），
-				# 同时降低自动化足迹。请求只需 page 处于 zhipin 同源即可携带 cookie。
-				reused = _find_reusable_zhipin_page(self._context)
+				# 复用页签时不新开空白页或导航；请求使用该页所属的登录会话。
 			elif not self._policy.may_create_context or not explicit:
 				# fail-closed：不在用户浏览器里新建 context 注入本地 Cookie。
 				# Issue #387 把「把 Cookie 复制到另一个 Profile」列为反面方案

@@ -505,6 +505,47 @@ def test_try_connect_reuses_open_zhipin_page_without_new_tab_or_nav():
 	assert open_zhipin_page.url == "https://www.zhipin.com/web/geek/job"  # 未被导航覆盖
 
 
+def test_existing_browser_finds_open_zhipin_page_in_later_context():
+	"""手动打开的 BOSS 页不在第一个 context 时也能原样复用。"""
+	session = BrowserSession(cookies={}, user_agent="", browser_source="existing-browser")
+	session._pw = MagicMock()
+	browser = MagicMock()
+	first_context = MagicMock()
+	first_context.pages = [_FakePage("https://mail.google.com/")]
+	second_context = MagicMock()
+	open_page = _FakePage("https://www.zhipin.com/web/geek/job")
+	second_context.pages = [open_page]
+	browser.contexts = [first_context, second_context]
+	session._pw.chromium.connect_over_cdp.return_value = browser
+
+	assert session._try_connect("ws://localhost:9222/test") is True
+	assert session._context is second_context
+	assert session._page is open_page
+	assert session._own_context is False
+	assert session._own_page is False
+	first_context.new_page.assert_not_called()
+	second_context.new_page.assert_not_called()
+	browser.new_context.assert_not_called()
+
+
+def test_existing_browser_does_not_create_page_when_all_contexts_lack_zhipin():
+	"""多个会话都没有手动打开的 BOSS 页时，保持只复用原则。"""
+	session = BrowserSession(cookies={}, user_agent="", browser_source="existing-browser")
+	session._pw = MagicMock()
+	browser = MagicMock()
+	first_context = MagicMock()
+	first_context.pages = [_FakePage("https://mail.google.com/")]
+	second_context = MagicMock()
+	second_context.pages = [_FakePage("about:blank")]
+	browser.contexts = [first_context, second_context]
+	session._pw.chromium.connect_over_cdp.return_value = browser
+
+	assert session._try_connect("ws://localhost:9222/test") is False
+	first_context.new_page.assert_not_called()
+	second_context.new_page.assert_not_called()
+	browser.new_context.assert_not_called()
+
+
 def test_try_connect_creates_page_when_no_open_zhipin_tab():
 	"""CDP 复用 context 但无 zhipin 页签时：仍新建 page 并导航（回退现状）。"""
 	session = BrowserSession(cookies={}, user_agent="")
