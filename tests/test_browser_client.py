@@ -560,6 +560,27 @@ def test_existing_browser_stops_before_request_when_bound_tab_turns_blank():
 	session._send_fetch.assert_not_called()
 
 
+@pytest.mark.parametrize("lost_reason", ["closed", "disconnected", "not_in_context"])
+def test_existing_browser_rejects_stale_page_even_if_old_url_is_boss(lost_reason):
+	session = BrowserSession(cookies={}, user_agent="", browser_source="existing-browser")
+	session._started = True
+	session._is_cdp = True
+	page = MagicMock()
+	page.url = "https://www.zhipin.com/web/geek/job"
+	page.is_closed.return_value = lost_reason == "closed"
+	session._page = page
+	session._context = MagicMock()
+	session._context.pages = [] if lost_reason == "not_in_context" else [page]
+	session._browser = MagicMock()
+	session._browser.is_connected.return_value = lost_reason != "disconnected"
+	session._send_fetch = MagicMock()
+
+	result = session.request("GET", "https://www.zhipin.com/wapi/zpgeek/search/joblist.json")
+	assert result["__cli_error_code__"] == "BROWSER_PAGE_LOST"
+	assert result["__cli_error_details__"]["request_sent"] is False
+	session._send_fetch.assert_not_called()
+
+
 def test_existing_browser_stops_if_tab_turns_blank_during_throttle():
 	session = BrowserSession(cookies={}, user_agent="", browser_source="existing-browser")
 	session._started = True

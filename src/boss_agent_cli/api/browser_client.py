@@ -236,8 +236,10 @@ class BrowserSession:
 		with window:
 			if budget is None:
 				self._throttle.wait()
-			check_request_control(self._check_request)
 			# 节流等待期间用户页签也可能变空白；此时尚未发起 fetch。
+			if self._bound_page_lost():
+				return self._page_lost_response()
+			check_request_control(self._check_request)
 			if self._bound_page_lost():
 				return self._page_lost_response()
 			try:
@@ -590,9 +592,9 @@ class BrowserSession:
 		self, method: str, url: str, *, params: dict[str, Any] | None = None, data: dict[str, Any] | None = None
 	) -> dict[str, Any]:
 		self._ensure_started()
-		self._raise_if_security_page()
 		if self._bound_page_lost():
 			return self._page_lost_response()
+		self._raise_if_security_page()
 		endpoint = endpoint_for_request(method, url)
 		replay_safe = bool(endpoint is not None and endpoint.replay_safe)
 
@@ -664,7 +666,20 @@ class BrowserSession:
 		if self._policy.name != "existing-browser":
 			return False
 		try:
-			url = self._page.url
+			page = self._page
+			if page is None:
+				return True
+			is_closed = getattr(page, "is_closed", None)
+			if callable(is_closed) and is_closed() is True:
+				return True
+			is_connected = getattr(self._browser, "is_connected", None)
+			if callable(is_connected) and is_connected() is False:
+				return True
+			if self._context is not None:
+				pages = self._context.pages
+				if isinstance(pages, (list, tuple)) and not any(p is page for p in pages):
+					return True
+			url = page.url
 		except Exception:
 			return True
 		return not isinstance(url, str) or not is_zhipin_url(url)
