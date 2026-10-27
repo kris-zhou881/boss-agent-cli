@@ -67,11 +67,110 @@ def test_greet_success_renders_message_and_records_cache(mock_cache_cls, mock_au
 	mock_cache.record_greet.assert_called_once_with("sec_001", "job_001")
 
 
+@patch("boss_agent_cli.commands.greet.get_platform_instance")
+@patch("boss_agent_cli.commands.greet.AuthManager")
+@patch("boss_agent_cli.commands.greet.CacheStore")
+def test_greet_unknown_result_never_suggests_retry(mock_cache_cls, mock_auth_cls, mock_get_platform):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_greeted.return_value = False
+	mock_cache.is_applied.return_value = False
+	mock_platform = _ctx_mock(mock_get_platform)
+	mock_platform.greet.return_value = {
+		"code": -1,
+		"message": "发送结果未确认",
+		"__cli_error_code__": "ACTION_UNCONFIRMED",
+		"__cli_error_details__": {"outcome": "unknown"},
+	}
+	mock_platform.is_success.return_value = False
+	mock_platform.parse_error.return_value = ("ACTION_UNCONFIRMED", "发送结果未确认")
+
+	result = CliRunner().invoke(cli, ["--json", "greet", "sec_001", "job_001"])
+	assert result.exit_code == 1
+	parsed = json.loads(result.output)
+	assert parsed["error"]["code"] == "ACTION_UNCONFIRMED"
+	assert parsed["error"]["recoverable"] is False
+	assert "勿直接重试" in str(parsed["error"].get("recovery_action") or "")
+	mock_cache.record_greet.assert_not_called()
+
+
+@patch("boss_agent_cli.commands.greet.get_platform_instance")
+@patch("boss_agent_cli.commands.greet.AuthManager")
+@patch("boss_agent_cli.commands.greet.CacheStore")
+def test_greet_timeout_after_dispatch_is_unconfirmed(mock_cache_cls, mock_auth_cls, mock_get_platform):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_greeted.return_value = False
+	mock_cache.is_applied.return_value = False
+	mock_platform = _ctx_mock(mock_get_platform)
+	mock_platform.greet.side_effect = TimeoutError("response lost")
+
+	result = CliRunner().invoke(cli, ["--json", "greet", "sec_001", "job_001"])
+	assert result.exit_code == 1
+	parsed = json.loads(result.output)
+	assert parsed["error"]["code"] == "ACTION_UNCONFIRMED"
+	assert parsed["error"]["recoverable"] is False
+	mock_cache.record_greet.assert_not_called()
+
+
+@patch("boss_agent_cli.commands.greet.get_platform_instance")
+@patch("boss_agent_cli.commands.greet.AuthManager")
+@patch("boss_agent_cli.commands.greet.CacheStore")
+def test_greet_blocks_after_immediate_chat_to_same_recruiter(mock_cache_cls, mock_auth_cls, mock_get_platform):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_greeted.return_value = False
+	mock_cache.is_applied.return_value = True
+
+	result = CliRunner().invoke(cli, ["--json", "greet", "sec_001", "job_002"])
+	assert result.exit_code == 1
+	assert json.loads(result.output)["error"]["code"] == "ALREADY_APPLIED"
+	mock_get_platform.assert_not_called()
+
+
 # Note: hook veto 分支已由 tests/test_hooks.py 独立覆盖，Click runner
 # 不便注入 ctx.obj["hooks"]，此处不重复测试。
 
 
 # ── batch-greet 真实执行路径 ─────────────────────────────
+
+
+@patch("boss_agent_cli.commands.greet.time")
+@patch("boss_agent_cli.commands.greet.get_platform_instance")
+@patch("boss_agent_cli.commands.greet.AuthManager")
+@patch("boss_agent_cli.commands.greet.CacheStore")
+def test_batch_greet_skips_recruiter_already_contacted_via_apply(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_greeted.return_value = False
+	mock_cache.is_applied.side_effect = lambda security_id: security_id == "s1"
+	mock_client = _ctx_mock(mock_client_cls)
+	mock_client.search_jobs.return_value = {
+		"zpData": {"jobList": [_make_raw_job("A", "s1"), _make_raw_job("B", "s2")]}
+	}
+	mock_client.is_success.return_value = True
+	mock_client.greet.return_value = {"code": 0, "zpData": {}}
+
+	result = CliRunner().invoke(cli, ["--json", "batch-greet", "test", "--count", "2"])
+	assert result.exit_code == 0
+	mock_client.greet.assert_called_once_with("s2", "job_s2")
+
+
+@patch("boss_agent_cli.commands.greet.time")
+@patch("boss_agent_cli.commands.greet.get_platform_instance")
+@patch("boss_agent_cli.commands.greet.AuthManager")
+@patch("boss_agent_cli.commands.greet.CacheStore")
+def test_batch_greet_only_contacts_same_recruiter_once(mock_cache_cls, mock_auth_cls, mock_client_cls, mock_time):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_greeted.return_value = False
+	mock_cache.is_applied.return_value = False
+	mock_client = _ctx_mock(mock_client_cls)
+	first = _make_raw_job("A", "s1")
+	second = _make_raw_job("B", "s1")
+	second["encryptJobId"] = "job_s1_other"
+	mock_client.search_jobs.return_value = {"zpData": {"jobList": [first, second]}}
+	mock_client.is_success.return_value = True
+	mock_client.greet.return_value = {"code": 0, "zpData": {}}
+
+	result = CliRunner().invoke(cli, ["--json", "batch-greet", "test", "--count", "2"])
+	assert result.exit_code == 0
+	mock_client.greet.assert_called_once_with("s1", "job_s1")
 
 
 @patch("boss_agent_cli.commands.greet.time")

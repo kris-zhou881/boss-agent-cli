@@ -777,11 +777,18 @@ class CacheStore:
 			"total_count": len(items),
 		}
 
-	def is_applied(self, security_id: str, job_id: str) -> bool:
-		row = self._conn.execute(
-			"SELECT 1 FROM apply_records WHERE security_id = ? AND job_id = ?",
-			(security_id, job_id),
-		).fetchone()
+	def is_applied(self, security_id: str, job_id: str | None = None) -> bool:
+		"""指定职位或同一招聘人的任一立即沟通记录。"""
+		if job_id is None:
+			row = self._conn.execute(
+				"SELECT 1 FROM apply_records WHERE security_id = ? LIMIT 1",
+				(security_id,),
+			).fetchone()
+		else:
+			row = self._conn.execute(
+				"SELECT 1 FROM apply_records WHERE security_id = ? AND job_id = ?",
+				(security_id, job_id),
+			).fetchone()
 		return row is not None
 
 	def record_apply(self, security_id: str, job_id: str) -> None:

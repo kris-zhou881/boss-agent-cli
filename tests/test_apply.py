@@ -53,6 +53,20 @@ def test_apply_duplicate_is_blocked(mock_cache_cls, mock_auth_cls, mock_get_plat
 @patch("boss_agent_cli.commands.apply.get_platform_instance")
 @patch("boss_agent_cli.commands.apply.AuthManager")
 @patch("boss_agent_cli.commands.apply.CacheStore")
+def test_apply_blocks_after_greeting_same_recruiter(mock_cache_cls, mock_auth_cls, mock_get_platform):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_applied.return_value = False
+	mock_cache.is_greeted.return_value = True
+
+	result = CliRunner().invoke(cli, ["--json", "apply", "sec_001", "job_002"])
+	assert result.exit_code == 1
+	assert json.loads(result.output)["error"]["code"] == "ALREADY_GREETED"
+	mock_get_platform.assert_not_called()
+
+
+@patch("boss_agent_cli.commands.apply.get_platform_instance")
+@patch("boss_agent_cli.commands.apply.AuthManager")
+@patch("boss_agent_cli.commands.apply.CacheStore")
 def test_apply_failure_does_not_record_local_state(mock_cache_cls, mock_auth_cls, mock_get_platform):
 	mock_cache = _ctx_mock(mock_cache_cls)
 	mock_cache.is_applied.return_value = False
@@ -66,6 +80,24 @@ def test_apply_failure_does_not_record_local_state(mock_cache_cls, mock_auth_cls
 	assert result.exit_code == 1
 	parsed = json.loads(result.output)
 	assert parsed["error"]["code"] == "NETWORK_ERROR"
+	mock_cache.record_apply.assert_not_called()
+
+
+@patch("boss_agent_cli.commands.apply.get_platform_instance")
+@patch("boss_agent_cli.commands.apply.AuthManager")
+@patch("boss_agent_cli.commands.apply.CacheStore")
+def test_apply_timeout_after_dispatch_is_unconfirmed(mock_cache_cls, mock_auth_cls, mock_get_platform):
+	mock_cache = _ctx_mock(mock_cache_cls)
+	mock_cache.is_applied.return_value = False
+	mock_cache.is_greeted.return_value = False
+	mock_platform = _ctx_mock(mock_get_platform)
+	mock_platform.apply.side_effect = TimeoutError("response lost")
+
+	result = CliRunner().invoke(cli, ["--json", "apply", "sec_001", "job_001"])
+	assert result.exit_code == 1
+	parsed = json.loads(result.output)
+	assert parsed["error"]["code"] == "ACTION_UNCONFIRMED"
+	assert parsed["error"]["recoverable"] is False
 	mock_cache.record_apply.assert_not_called()
 
 

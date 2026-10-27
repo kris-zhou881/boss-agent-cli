@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import click
 import pytest
@@ -302,7 +303,7 @@ def test_candidate_write_actions_persist_idempotence_records(tmp_path):
 	greet_inputs = {"security_id": "sec-2", "job_id": "job-2", "message": "你好"}
 	assert DEFAULT_ACTIONS["candidate_apply"](context, apply_inputs, {}).data["result"]["applied"] is True
 	assert DEFAULT_ACTIONS["candidate_greet"](context, greet_inputs, {}).data["result"]["greeted"] is True
-	with pytest.raises(WorkflowActionError, match="已对该职位") as applied:
+	with pytest.raises(WorkflowActionError, match="已对该招聘者") as applied:
 		DEFAULT_ACTIONS["candidate_apply"](context, apply_inputs, {})
 	with pytest.raises(WorkflowActionError, match="打过招呼") as greeted:
 		DEFAULT_ACTIONS["candidate_greet"](context, greet_inputs, {})
@@ -312,6 +313,48 @@ def test_candidate_write_actions_persist_idempotence_records(tmp_path):
 		("apply", "sec-1", "job-1", "lid-1"),
 		("greet", "sec-2", "job-2", "你好"),
 	]
+
+
+def test_candidate_write_actions_share_recruiter_deduplication(tmp_path):
+	platform = _FakeCandidatePlatform()
+	context = _action_context(tmp_path, candidate=platform)
+	DEFAULT_ACTIONS["candidate_apply"](context, {"security_id": "sec-1", "job_id": "job-1"}, {})
+	with pytest.raises(WorkflowActionError) as after_apply:
+		DEFAULT_ACTIONS["candidate_greet"](context, {"security_id": "sec-1", "job_id": "job-2"}, {})
+	assert after_apply.value.code == "ALREADY_APPLIED"
+
+	DEFAULT_ACTIONS["candidate_greet"](context, {"security_id": "sec-2", "job_id": "job-1"}, {})
+	with pytest.raises(WorkflowActionError) as after_greet:
+		DEFAULT_ACTIONS["candidate_apply"](context, {"security_id": "sec-2", "job_id": "job-2"}, {})
+	assert after_greet.value.code == "ALREADY_GREETED"
+	assert len(platform.calls) == 2
+
+
+@pytest.mark.parametrize("action_name,method_name", [("candidate_apply", "apply"), ("candidate_greet", "greet")])
+def test_candidate_write_timeout_is_not_retryable(tmp_path, action_name, method_name):
+	platform = _FakeCandidatePlatform()
+	setattr(platform, method_name, MagicMock(side_effect=TimeoutError("response lost")))
+	context = _action_context(tmp_path, candidate=platform)
+
+	with pytest.raises(WorkflowActionError) as result:
+		DEFAULT_ACTIONS[action_name](context, {"security_id": "sec-1", "job_id": "job-1"}, {})
+	assert result.value.code == "ACTION_UNCONFIRMED"
+	assert result.value.recoverable is False
+	getattr(platform, method_name).assert_called_once()
+
+
+@pytest.mark.parametrize("platform_code,expected", [("NETWORK_ERROR", "ACTION_UNCONFIRMED"), ("RATE_LIMITED", "RATE_LIMITED")])
+def test_candidate_write_failure_does_not_trigger_workflow_retry(tmp_path, platform_code, expected):
+	platform = _FakeCandidatePlatform()
+	platform.apply = MagicMock(return_value={"code": -1, "message": "未确认"})
+	platform.parse_error = MagicMock(return_value=(platform_code, "未确认"))
+	context = _action_context(tmp_path, candidate=platform)
+
+	with pytest.raises(WorkflowActionError) as result:
+		DEFAULT_ACTIONS["candidate_apply"](context, {"security_id": "sec-1", "job_id": "job-1"}, {})
+	assert result.value.code == expected
+	assert result.value.recoverable is False
+	platform.apply.assert_called_once()
 
 
 def test_candidate_contact_actions_refresh_rotating_security_id(tmp_path):
@@ -3049,7 +3092,7 @@ def test_classify_action_error_keeps_action_unconfirmed_no_retry_contract():
 	mapped, recoverable, recovery = _classify_action_error("ACTION_UNCONFIRMED", "任意文案")
 	assert mapped == "ACTION_UNCONFIRMED"
 	assert recoverable is False
-	assert "boss hr chatmsg" in recovery
+	assert "BOSS 对应会话" in recovery
 	assert "稍后重试" not in recovery
 
 

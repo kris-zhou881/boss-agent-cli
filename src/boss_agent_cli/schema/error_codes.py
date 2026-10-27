@@ -17,7 +17,7 @@ ERROR_CODES: dict[str, dict[str, Any]] = {
 	"ACTION_UNCONFIRMED": {
 		"message": "页面动作已执行，但未确认是否发送成功，禁止自动重试",
 		"recoverable": False,
-		"recovery_action": "动作可能已生效，请先 `boss hr chatmsg <friend_id>` 核实，勿直接重试",
+		"recovery_action": "动作可能已生效，请先在 BOSS 对应会话核对，勿直接重试",
 	},
 	"EXCHANGE_NOT_AVAILABLE": {
 		"message": "换电话/换微信按钮未解锁（招聘者尚未在会话中发过消息），本次未发出任何请求",

@@ -149,6 +149,9 @@ def test_apply_different_jobs_independent(store):
 	store.record_apply("s1", "j1")
 	assert store.is_applied("s1", "j1") is True
 	assert store.is_applied("s1", "j2") is False
+	# 立即沟通与打招呼共用接口；按招聘人去重时仍要识别另一职位的沟通。
+	assert store.is_applied("s1") is True
+	assert store.is_applied("s2") is False
 
 
 # ── shortlist_records ───────────────────────────────────────────────

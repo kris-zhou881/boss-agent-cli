@@ -4,6 +4,8 @@ import time
 import click
 
 from boss_agent_cli.api.client import RISK_ERROR_BY_CODE, PlatformRiskError
+from boss_agent_cli.api.browser_source import BrowserSourceUnavailable
+from boss_agent_cli.api.request_budget import is_request_stop
 from boss_agent_cli.api.endpoints import (
 	INDUSTRY_CODES,
 	JOB_TYPE_CODES,
@@ -11,7 +13,7 @@ from boss_agent_cli.api.endpoints import (
 	STAGE_CODES,
 )
 from boss_agent_cli.api.models import JobItem
-from boss_agent_cli.auth.manager import AuthManager
+from boss_agent_cli.auth.manager import AuthManager, AuthRequired, TokenRefreshFailed
 from boss_agent_cli.cache.store import CacheStore
 from boss_agent_cli.compliance import require_compliance_allowed
 from boss_agent_cli.commands._platform import get_platform_instance
@@ -19,6 +21,7 @@ from boss_agent_cli.display import (
 	handle_auth_errors,
 	handle_error_output,
 	handle_output,
+	handle_platform_error_output,
 	render_batch_operation_summary,
 	render_message_panel,
 	risk_error_contract,
@@ -50,6 +53,13 @@ def greet_cmd(ctx: click.Context, security_id: str, job_id: str, message: str) -
 				hints={"next_actions": ["boss search <query> — 搜索其他职位"]},
 			)
 			return
+		if cache.is_applied(security_id) is True:
+			handle_error_output(
+				ctx, "greet",
+				code="ALREADY_APPLIED",
+				message="已对该招聘者发起立即沟通；已阻止重复打招呼",
+			)
+			return
 
 		auth = AuthManager(data_dir, logger=logger, platform=ctx.obj.get("platform", "zhipin"))
 		with get_platform_instance(ctx, auth) as platform:
@@ -70,15 +80,24 @@ def greet_cmd(ctx: click.Context, security_id: str, job_id: str, message: str) -
 					)
 					return
 
-			resp = platform.greet(security_id, job_id, message)
-			if not platform.is_success(resp):
-				error_code, _ = platform.parse_error(resp)
+			try:
+				resp = platform.greet(security_id, job_id, message)
+			except Exception as exc:
+				if is_request_stop(exc) or isinstance(exc, (AuthRequired, TokenRefreshFailed, BrowserSourceUnavailable)):
+					raise
 				handle_error_output(
-					ctx, "greet",
-					code=error_code if error_code != "UNKNOWN" else "NETWORK_ERROR",
-					message=resp.get("message") or "打招呼失败",
-					recoverable=True,
-					recovery_action="重试",
+					ctx, "greet", code="ACTION_UNCONFIRMED",
+					message="打招呼请求中断，结果未确认",
+					recoverable=False,
+					recovery_action="先在 BOSS 对应会话核对，勿直接重试",
+					details={"outcome": "unknown"},
+				)
+				return
+			if not platform.is_success(resp):
+				handle_platform_error_output(
+					ctx, "greet", platform, resp,
+					fallback_message="打招呼失败",
+					unknown_error_code="NETWORK_ERROR",
 				)
 				return
 
@@ -167,12 +186,16 @@ def batch_greet_cmd(ctx: click.Context, query: str, city: str | None, salary: st
 			)
 
 			candidates = []
+			seen_recruiters: set[str] = set()
 			for raw_item in deduplicate_job_result(job_list):
 				matches, _ = prefilter_platform_job_type(raw_item, criteria, platform_name=platform.name)
 				if not matches:
 					continue
 				item = JobItem.from_api(raw_item)
-				if not cache.is_greeted(item.security_id):
+				if not item.security_id or item.security_id in seen_recruiters:
+					continue
+				seen_recruiters.add(item.security_id)
+				if not cache.is_greeted(item.security_id) and cache.is_applied(item.security_id) is not True:
 					candidates.append(item)
 				if len(candidates) >= count:
 					break
@@ -195,6 +218,8 @@ def batch_greet_cmd(ctx: click.Context, query: str, city: str | None, salary: st
 
 			for idx, item in enumerate(candidates):
 				success = False
+				if cache.is_greeted(item.security_id) or cache.is_applied(item.security_id) is True:
+					continue
 
 				try:
 					resp = platform.greet(item.security_id, item.job_id)

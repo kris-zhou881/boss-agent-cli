@@ -254,7 +254,7 @@ def test_ws_text_frame_is_not_base64_decoded():
 def test_action_unconfirmed_is_registered_and_not_retryable():
 	spec = ERROR_CODES["ACTION_UNCONFIRMED"]
 	assert spec["recoverable"] is False
-	assert "boss hr chatmsg" in spec["recovery_action"]
+	assert "BOSS 对应会话" in spec["recovery_action"]
 	assert "勿直接重试" in spec["recovery_action"]
 
 

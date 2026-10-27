@@ -8,7 +8,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from boss_agent_cli.auth.manager import AuthManager
+from boss_agent_cli.auth.manager import AuthManager, AuthRequired, TokenRefreshFailed
+from boss_agent_cli.api.browser_source import BrowserSourceUnavailable, BrowserSourceUnsupported
+from boss_agent_cli.api.request_budget import is_request_stop
 from boss_agent_cli.api.endpoints import CITY_CODES
 from boss_agent_cli.ai.config import AIConfigStore
 from boss_agent_cli.ai.service import AIService, AIServiceError
@@ -270,6 +272,32 @@ def _unwrap(platform: Any, response: dict[str, Any], fallback: str) -> Any:
 	)
 
 
+def _candidate_write_result(platform: Any, send: Callable[[], dict[str, Any]], fallback: str) -> Any:
+	"""A lost write response must never become an automatically retried workflow step."""
+	try:
+		response = send()
+	except Exception as exc:
+		if is_request_stop(exc) or isinstance(
+			exc, (AuthRequired, TokenRefreshFailed, BrowserSourceUnavailable, BrowserSourceUnsupported, NotImplementedError)
+		):
+			raise
+		raise WorkflowActionError(
+			"ACTION_UNCONFIRMED", "请求中断，结果未确认", recoverable=False,
+			recovery_action="先在 BOSS 对应会话核对，勿直接重试", details={"outcome": "unknown"},
+		) from exc
+	if not platform.is_success(response):
+		code, message = platform.parse_error(response)
+		details = response.get("__cli_error_details__") if isinstance(response, dict) else None
+		if code in {"NETWORK_ERROR", "UNKNOWN"} and not (isinstance(details, dict) and details.get("request_sent") is False):
+			raise WorkflowActionError(
+				"ACTION_UNCONFIRMED", message or "请求结果未确认", recoverable=False,
+				recovery_action="先在 BOSS 对应会话核对，勿直接重试", details={"outcome": "unknown"},
+			)
+		if code in {"RATE_LIMITED", "GREET_LIMIT"}:
+			raise WorkflowActionError(code, message or fallback, recoverable=False, recovery_action="暂停操作并核对平台状态")
+	return _unwrap(platform, response, fallback)
+
+
 def execute_candidate_detail(
 	platform: Any,
 	*,
@@ -429,10 +457,14 @@ def _candidate_apply(context: ActionContext, inputs: Mapping[str, Any], prior: M
 	security_id = str(_required(inputs, "security_id"))
 	job_id = str(_required(inputs, "job_id"))
 	with CacheStore(context.data_dir / "cache" / "boss_agent.db") as cache:
-		if cache.is_applied(security_id, job_id):
-			raise WorkflowActionError("ALREADY_APPLIED", "已对该职位发起过立即沟通；附件简历状态需另行核对")
+		if cache.is_applied(security_id):
+			raise WorkflowActionError("ALREADY_APPLIED", "已对该招聘者发起过立即沟通；附件简历状态需另行核对")
+		if cache.is_greeted(security_id):
+			raise WorkflowActionError("ALREADY_GREETED", "已向该招聘者打过招呼；立即沟通共用同一发送接口")
 		with context.candidate_platform() as platform:
-			data = _unwrap(platform, platform.apply(security_id, job_id, lid=str(inputs.get("lid") or "")), "立即沟通失败")
+			data = _candidate_write_result(
+				platform, lambda: platform.apply(security_id, job_id, lid=str(inputs.get("lid") or "")), "立即沟通失败"
+			)
 		cache.record_apply(security_id, job_id)
 	return StepResult({
 		"security_id": security_id,
@@ -450,9 +482,11 @@ def _candidate_greet(context: ActionContext, inputs: Mapping[str, Any], prior: M
 	with CacheStore(context.data_dir / "cache" / "boss_agent.db") as cache:
 		if cache.is_greeted(security_id):
 			raise WorkflowActionError("ALREADY_GREETED", "已向该招聘者打过招呼")
+		if cache.is_applied(security_id):
+			raise WorkflowActionError("ALREADY_APPLIED", "已对该招聘者发起立即沟通；禁止重复打招呼")
 		with context.candidate_platform() as platform:
-			data = _unwrap(
-				platform, platform.greet(security_id, job_id, str(inputs.get("message") or "")), "打招呼失败"
+			data = _candidate_write_result(
+				platform, lambda: platform.greet(security_id, job_id, str(inputs.get("message") or "")), "打招呼失败"
 			)
 		cache.record_greet(security_id, job_id)
 	return StepResult({"security_id": security_id, "job_id": job_id, "result": data})
